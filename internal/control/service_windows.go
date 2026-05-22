@@ -11,15 +11,8 @@ import (
 	"golang.org/x/sys/windows/svc/mgr"
 )
 
-func init() {
-	// Override platform detection for Windows builds
-}
-
-func detectPlatform() string {
-	return "windows"
-}
-
-func (sa *ServiceAdapter) installWindowsService() error {
+// Install registers the pilot as a Windows service
+func (sa *ServiceAdapter) Install() error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to service manager: %w", err)
@@ -47,7 +40,8 @@ func (sa *ServiceAdapter) installWindowsService() error {
 	return nil
 }
 
-func (sa *ServiceAdapter) startWindowsService() error {
+// Start starts the Windows service
+func (sa *ServiceAdapter) Start() error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to service manager: %w", err)
@@ -63,7 +57,8 @@ func (sa *ServiceAdapter) startWindowsService() error {
 	return s.Start()
 }
 
-func (sa *ServiceAdapter) stopWindowsService() error {
+// Stop stops the Windows service
+func (sa *ServiceAdapter) Stop() error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to service manager: %w", err)
@@ -80,7 +75,8 @@ func (sa *ServiceAdapter) stopWindowsService() error {
 	return err
 }
 
-func (sa *ServiceAdapter) uninstallWindowsService() error {
+// Uninstall removes the Windows service
+func (sa *ServiceAdapter) Uninstall() error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return fmt.Errorf("failed to connect to service manager: %w", err)

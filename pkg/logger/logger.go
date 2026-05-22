@@ -1,6 +1,7 @@
 package logger
 
 import (
+	"io"
 	"log"
 	"os"
 )
@@ -19,13 +20,8 @@ func init() {
 	defaultLogger = NewLogger(os.Stdout, "[UBAX-Pilot] ")
 }
 
-// NewLogger creates a new Logger instance
-func NewLogger(prefix string) *Logger {
-	return NewLogger(os.Stdout, prefix)
-}
-
-// NewLogger creates a logger writing to the given writer
-func NewLogger(w *os.File, prefix string) *Logger {
+// NewLogger creates a new Logger instance writing to the given writer
+func NewLogger(w io.Writer, prefix string) *Logger {
 	return &Logger{
 		info:  log.New(w, prefix+"INFO:  ", log.Ldate|log.Ltime|log.Lshortfile),
 		warn:  log.New(w, prefix+"WARN:  ", log.Ldate|log.Ltime|log.Lshortfile),
