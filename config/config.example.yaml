@@ -1,0 +1,23 @@
+// Default config file for UBAX-Pilot
+# UBAX-Pilot Configuration
+
+# Pilot settings
+pilot_name: "ubax-pilot"
+version: "0.1.0"
+
+# Server connection
+server_endpoint: "localhost:9090"
+heartbeat_interval_seconds: 30
+
+# Collector settings
+collector_type: "vector"  # "vector" or "filebeat"
+# collector_bin_path: ""   # Auto-detected by platform
+# collector_conf_path: ""  # Auto-detected by platform
+
+# Resource limits
+max_cpu_percent: 80.0
+max_memory_mb: 512
+
+# Buffer settings
+# buffer_dir: ""           # Auto-detected by platform
+max_buffer_size_mb: 1024
