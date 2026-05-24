@@ -1,0 +1,4 @@
+# UBAX-Pilot 内置配置
+version: "0.1.0"
+build_time: "2026-05-24"
+git_commit: "unknown"

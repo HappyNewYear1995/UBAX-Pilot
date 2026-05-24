@@ -1,9 +1,9 @@
 package control
 
-// ServiceAdapter registers and manages the pilot as a system service
+// ServiceAdapter 注册并管理 Pilot 作为系统服务
 type ServiceAdapter struct{}
 
-// NewServiceAdapter creates a platform-specific service adapter
+// NewServiceAdapter 创建平台特定的服务适配器
 func NewServiceAdapter() *ServiceAdapter {
 	return &ServiceAdapter{}
 }
