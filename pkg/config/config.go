@@ -1,6 +1,8 @@
 package config
 
 import (
+	"crypto/rand"
+	"fmt"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +12,9 @@ import (
 
 // Config 存储 UBAX-Pilot 的全局配置
 type Config struct {
+	// Agent 唯一标识
+	AgentUUID string `yaml:"agent_uuid"`
+
 	// 服务端连接设置
 	ServerEndpoint    string `yaml:"server_endpoint"`
 	HeartbeatInterval int    `yaml:"heartbeat_interval_seconds"`
@@ -28,13 +33,24 @@ type Config struct {
 // DefaultConfig 返回带有合理默认值的配置
 func DefaultConfig() *Config {
 	return &Config{
-		ServerEndpoint:    "localhost:9090",
-		HeartbeatInterval: 30,
+		AgentUUID:         generateUUID(),
+		ServerEndpoint:    "http://localhost:48080",
+		HeartbeatInterval: 60,
 		VectorBinPath:     defaultVectorBinPath(),
 		VectorConfPath:    defaultVectorConfPath(),
 		MaxMemoryMB:       512,
 		OS:                runtime.GOOS,
 	}
+}
+
+// generateUUID 生成 UUID v4
+func generateUUID() string {
+	b := make([]byte, 16)
+	_, _ = rand.Read(b)
+	b[6] = (b[6] & 0x0f) | 0x40 // version 4
+	b[8] = (b[8] & 0x3f) | 0x80 // variant 10
+	return fmt.Sprintf("%08x-%04x-%04x-%04x-%012x",
+		b[0:4], b[4:6], b[6:8], b[8:10], b[10:])
 }
 
 func defaultVectorBinPath() string {
@@ -77,6 +93,12 @@ func LoadConfig(path string) (*Config, error) {
 		}
 	}
 
+	// 确保 agent_uuid 已持久化（首次运行生成后不再修改）
+	if cfg.AgentUUID == "" {
+		cfg.AgentUUID = generateUUID()
+		_ = saveConfig(path, cfg)
+	}
+
 	// 确保平台相关字段正确设置
 	cfg.OS = runtime.GOOS
 
@@ -101,6 +123,21 @@ func generateDefaultConfig(path string) error {
 	}
 
 	// 确保目录存在
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+
+	return os.WriteFile(path, data, 0644)
+}
+
+// saveConfig 将配置保存到文件
+func saveConfig(path string, cfg *Config) error {
+	data, err := yaml.Marshal(cfg)
+	if err != nil {
+		return err
+	}
+
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return err

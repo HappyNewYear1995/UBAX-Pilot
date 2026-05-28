@@ -1,7 +1,11 @@
 package comm
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"io"
+	"net/http"
 	"os"
 	"time"
 
@@ -16,14 +20,16 @@ type CollectorStatusProvider interface {
 
 // HeartbeatReporter 定期向服务端发送健康状态
 type HeartbeatReporter struct {
-	cfg              *config.Config
-	statusProvider   CollectorStatusProvider
-	interval         time.Duration
-	stopCh           chan struct{}
+	cfg            *config.Config
+	statusProvider CollectorStatusProvider
+	interval       time.Duration
+	stopCh         chan struct{}
+	httpClient     *http.Client
 }
 
 // HeartbeatPayload 心跳上报数据
 type HeartbeatPayload struct {
+	AgentUUID       string    `json:"agent_uuid"`
 	Version         string    `json:"version"`
 	Hostname        string    `json:"hostname"`
 	Timestamp       time.Time `json:"timestamp"`
@@ -39,6 +45,9 @@ func NewHeartbeatReporter(cfg *config.Config, statusProvider CollectorStatusProv
 		statusProvider: statusProvider,
 		interval:       time.Duration(cfg.HeartbeatInterval) * time.Second,
 		stopCh:         make(chan struct{}),
+		httpClient: &http.Client{
+			Timeout: 10 * time.Second,
+		},
 	}
 }
 
@@ -67,6 +76,7 @@ func (hr *HeartbeatReporter) Stop() {
 	close(hr.stopCh)
 }
 
+// 发送心跳
 func (hr *HeartbeatReporter) sendHeartbeat(ctx context.Context) {
 	collectorRunning := false
 	if hr.statusProvider != nil {
@@ -76,6 +86,7 @@ func (hr *HeartbeatReporter) sendHeartbeat(ctx context.Context) {
 	hostname, _ := os.Hostname()
 
 	payload := &HeartbeatPayload{
+		AgentUUID:       hr.cfg.AgentUUID,
 		Version:         config.GetVersion(),
 		Hostname:        hostname,
 		Timestamp:       time.Now(),
@@ -84,8 +95,36 @@ func (hr *HeartbeatReporter) sendHeartbeat(ctx context.Context) {
 		OS:              hr.cfg.OS,
 	}
 
-	// TODO: 通过 HTTP/gRPC 将数据发送到服务端
-	logger.Debug("心跳已发送:", payload.Version, "采集器状态:", payload.CollectorStatus)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		logger.Error("序列化心跳失败:", err)
+		return
+	}
+
+	url := hr.cfg.ServerEndpoint + "/pilot/agent/heartbeat"
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
+	if err != nil {
+		logger.Error("创建心跳请求失败:", err)
+		return
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Hostname", hostname)
+
+	resp, err := hr.httpClient.Do(req)
+	if err != nil {
+		logger.Error("发送心跳失败:", err)
+		return
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		logger.Errorf("心跳请求被拒绝: %s", resp.Status)
+		return
+	}
+
+	logger.Debugf("心跳已发送: UUID = %s, 版本=%s, 采集器=%s", payload.AgentUUID, payload.Version, payload.CollectorStatus)
 }
 
 func mapStatus(running bool) string {

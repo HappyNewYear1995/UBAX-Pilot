@@ -3,6 +3,9 @@ package comm
 import (
 	"context"
 	"fmt"
+	"io"
+	"net/http"
+	"os"
 	"time"
 
 	"github.com/ubax/ubax-pilot/pkg/logger"
@@ -15,19 +18,51 @@ type ConfigFetcher interface {
 
 // HTTPConfigFetcher 通过 HTTP 从服务端获取配置
 type HTTPConfigFetcher struct {
-	endpoint string
+	endpoint   string
+	httpClient *http.Client
 }
 
 // NewHTTPConfigFetcher 创建 HTTP 配置获取器
 func NewHTTPConfigFetcher(endpoint string) *HTTPConfigFetcher {
-	return &HTTPConfigFetcher{endpoint: endpoint}
+	return &HTTPConfigFetcher{
+		endpoint: endpoint,
+		httpClient: &http.Client{
+			Timeout: 30 * time.Second,
+		},
+	}
 }
 
 // Fetch 从服务端拉取配置
 func (hf *HTTPConfigFetcher) Fetch(ctx context.Context) ([]byte, error) {
-	// TODO: 实现实际的 HTTP 请求
-	logger.Info("正在从以下地址获取配置:", hf.endpoint)
-	return nil, fmt.Errorf("未实现")
+	url := hf.endpoint + "/api/config"
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("创建请求失败: %w", err)
+	}
+
+	hostname, _ := os.Hostname()
+	req.Header.Set("X-Hostname", hostname)
+
+	resp, err := hf.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("请求配置失败: %w", err)
+	}
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("服务端返回错误: %s", resp.Status)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("读取响应失败: %w", err)
+	}
+
+	logger.Infof("成功从服务端拉取配置: %d 字节", len(body))
+	return body, nil
 }
 
 // RemoteConfigClient 处理与 UBAX 服务端的通信

@@ -101,11 +101,10 @@ func (sp *ServerPushClient) connectLoop(ctx context.Context) {
 }
 
 func (sp *ServerPushClient) connect(ctx context.Context) error {
-	// TODO: 替换为实际的 WebSocket/SSE 连接
 	// 当前使用 HTTP 长轮询模拟
 	logger.Info("正在连接推送服务:", sp.endpoint)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", sp.endpoint+"/push", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", sp.endpoint+"/pilot/agent/push", nil)
 	if err != nil {
 		return fmt.Errorf("创建请求失败: %w", err)
 	}

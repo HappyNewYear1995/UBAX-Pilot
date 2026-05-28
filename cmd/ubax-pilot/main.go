@@ -122,7 +122,9 @@ func run(cfg *config.Config) error {
 	if err := processManager.Start(ctx); err != nil {
 		return err
 	}
-	defer processManager.Stop()
+	defer func(processManager *control.ProcessManager) {
+		_ = processManager.Stop()
+	}(processManager)
 
 	// 启动心跳上报
 	heartbeat.Start(ctx)

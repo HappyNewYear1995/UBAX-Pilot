@@ -209,7 +209,7 @@ func (pm *ProcessManager) monitor() {
 	}
 }
 
-// ResourceMonitor 跟踪 CPU 和内存使用情况
+// ResourceMonitor 跟踪 CPU 和内存使用情况（30s间隔）
 type ResourceMonitor struct {
 	cfg           *config.Config
 	pm            *ProcessManager
@@ -222,7 +222,7 @@ func NewResourceMonitor(cfg *config.Config, pm *ProcessManager) *ResourceMonitor
 	return &ResourceMonitor{
 		cfg:           cfg,
 		pm:            pm,
-		checkInterval: 10 * time.Second,
+		checkInterval: 30 * time.Second,
 		stopCh:        make(chan struct{}),
 	}
 }
