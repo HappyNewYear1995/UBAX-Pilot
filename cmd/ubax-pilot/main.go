@@ -99,7 +99,7 @@ func run(cfg *config.Config) error {
 	processManager := control.NewProcessManager(cfg)
 
 	// 4. 初始化服务端推送客户端（配置推送 + 远程命令）
-	pushClient := comm.NewServerPushClient(cfg.ServerEndpoint, "")
+	pushClient := comm.NewServerPushClient(cfg.ServerEndpoint, cfg.AgentUUID, "")
 	pushClient.SetConfigHandler(func(rules []byte) error {
 		if err := renderer.Render(rules); err != nil {
 			return err
@@ -107,7 +107,7 @@ func run(cfg *config.Config) error {
 		return renderer.TriggerHotReload()
 	})
 	pushClient.SetCommandHandler(func(cmd comm.CommandPayload) error {
-		return handleRemoteCommand(cmd, processManager, renderer)
+		return handleRemoteCommand(cmd, processManager)
 	})
 
 	// 5. 初始化心跳上报（携带采集器实时状态）
@@ -119,12 +119,12 @@ func run(cfg *config.Config) error {
 	defer resourceMonitor.Stop()
 
 	// 启动 Vector 进程
-	if err := processManager.Start(ctx); err != nil {
+	/*if err := processManager.Start(ctx); err != nil {
 		return err
 	}
 	defer func(processManager *control.ProcessManager) {
 		_ = processManager.Stop()
-	}(processManager)
+	}(processManager)*/
 
 	// 启动心跳上报
 	heartbeat.Start(ctx)
@@ -152,7 +152,7 @@ func run(cfg *config.Config) error {
 }
 
 // handleRemoteCommand 处理服务端下发的远程命令
-func handleRemoteCommand(cmd comm.CommandPayload, pm *control.ProcessManager, renderer *comm.ConfigRenderer) error {
+func handleRemoteCommand(cmd comm.CommandPayload, pm *control.ProcessManager) error {
 	switch cmd.Action {
 	case "restart":
 		logger.Info("收到重启命令")

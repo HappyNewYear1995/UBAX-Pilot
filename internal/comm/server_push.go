@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -33,6 +35,7 @@ type ConfigPayload struct {
 // ServerPushClient 接收服务端主动推送的配置和命令
 type ServerPushClient struct {
 	endpoint       string
+	agentUUID      string
 	token          string
 	configHandler  func([]byte) error
 	commandHandler func(CommandPayload) error
@@ -45,12 +48,13 @@ type ServerPushClient struct {
 }
 
 // NewServerPushClient 创建服务端推送客户端
-func NewServerPushClient(endpoint, token string) *ServerPushClient {
+func NewServerPushClient(endpoint, agentUUID, token string) *ServerPushClient {
 	return &ServerPushClient{
 		endpoint:       endpoint,
+		agentUUID:      agentUUID,
 		token:          token,
 		stopCh:         make(chan struct{}),
-		reconnectDelay: 3 * time.Second,
+		reconnectDelay: 10 * time.Second,
 		maxDelay:       60 * time.Second,
 	}
 }
@@ -88,36 +92,45 @@ func (sp *ServerPushClient) connectLoop(ctx context.Context) {
 		}
 
 		if err := sp.connect(ctx); err != nil {
-			logger.Error("推送连接失败:", err)
+			logger.Errorf("推送连接断开: %v，%v 后重连", err, delay)
 			// 指数退避
 			delay *= 2
 			if delay > sp.maxDelay {
 				delay = sp.maxDelay
 			}
 		} else {
-			delay = sp.reconnectDelay
+			// 连接正常关闭（非主动停止），立即重连
+			select {
+			case <-sp.stopCh:
+				return
+			default:
+				logger.Info("推送连接已关闭，正在重连...")
+				delay = sp.reconnectDelay
+			}
 		}
 	}
 }
 
 func (sp *ServerPushClient) connect(ctx context.Context) error {
-	// 当前使用 HTTP 长轮询模拟
 	logger.Info("正在连接推送服务:", sp.endpoint)
 
-	req, err := http.NewRequestWithContext(ctx, "GET", sp.endpoint+"/pilot/agent/push", nil)
+	req, err := http.NewRequestWithContext(ctx, "GET", sp.endpoint+"/pilot/agent/content", nil)
 	if err != nil {
 		return fmt.Errorf("创建请求失败: %w", err)
 	}
 
 	req.Header.Set("Authorization", "Bearer "+sp.token)
 	req.Header.Set("Accept", "text/event-stream")
+	req.Header.Set("X-Agent-UUID", sp.agentUUID)
 
 	client := &http.Client{Timeout: 0} // 长连接不设置超时
 	resp, err := client.Do(req)
 	if err != nil {
 		return fmt.Errorf("连接失败: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		_ = Body.Close()
+	}(resp.Body)
 
 	sp.mu.Lock()
 	sp.connected = true
@@ -125,8 +138,11 @@ func (sp *ServerPushClient) connect(ctx context.Context) error {
 
 	logger.Info("推送连接已建立")
 
-	// 读取推送消息（简化实现，实际应使用 WebSocket 或 SSE 解析器）
-	decoder := json.NewDecoder(resp.Body)
+	// 读取 SSE 推送消息
+	buf := make([]byte, 4096)
+	var eventBuf string
+	var eventType string
+
 	for {
 		select {
 		case <-sp.stopCh:
@@ -136,16 +152,81 @@ func (sp *ServerPushClient) connect(ctx context.Context) error {
 		default:
 		}
 
-		var msg PushMessage
-		if err := decoder.Decode(&msg); err != nil {
+		n, err := resp.Body.Read(buf)
+		if err != nil && err != io.EOF {
 			sp.mu.Lock()
 			sp.connected = false
 			sp.mu.Unlock()
 			return fmt.Errorf("读取消息失败: %w", err)
 		}
+		if n == 0 {
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
 
-		sp.handleMessage(msg)
+		eventBuf += string(buf[:n])
+
+		// 按行解析 SSE 事件
+		for {
+			idx := indexOfAny(eventBuf, []string{"\r\n\r\n", "\n\n"})
+			if idx == -1 {
+				break
+			}
+
+			block := eventBuf[:idx]
+			eventBuf = eventBuf[idx+2:]
+
+			var msg PushMessage
+			lines := splitLines(block)
+			for _, line := range lines {
+				if strings.HasPrefix(line, "event:") {
+					eventType = strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+				} else if strings.HasPrefix(line, "data:") {
+					data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+					if eventType == "message" {
+						if err := json.Unmarshal([]byte(data), &msg); err != nil {
+							logger.Error("解析推送消息失败:", err, "原始数据:", data)
+							continue
+						}
+						sp.handleMessage(msg)
+					} else if eventType == "connected" {
+						logger.Info("服务端确认连接:", data)
+					}
+				}
+			}
+			eventType = ""
+		}
+
+		if err == io.EOF {
+			sp.mu.Lock()
+			sp.connected = false
+			sp.mu.Unlock()
+			return fmt.Errorf("连接已关闭")
+		}
 	}
+}
+
+func indexOfAny(s string, subs []string) int {
+	minIdx := -1
+	for _, sub := range subs {
+		if idx := strings.Index(s, sub); idx != -1 {
+			if minIdx == -1 || idx < minIdx {
+				minIdx = idx
+			}
+		}
+	}
+	return minIdx
+}
+
+func splitLines(s string) []string {
+	var lines []string
+	for _, line := range strings.Split(s, "\n") {
+		line = strings.TrimRight(line, "\r")
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
 
 func (sp *ServerPushClient) handleMessage(msg PushMessage) {

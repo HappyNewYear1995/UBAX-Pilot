@@ -43,3 +43,6 @@ buffer/
 
 # Logs
 *.log
+
+# GO BUILD
+go.sum

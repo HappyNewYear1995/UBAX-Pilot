@@ -1,11 +1,6 @@
-pilot_name: ubax-pilot
-version: 0.1.0
-server_endpoint: localhost:9090
+agent_uuid: 7e9e362a-5d29-4a23-ab90-3ad02ea54e9e
+server_endpoint: http://localhost:48080
 heartbeat_interval_seconds: 30
-collector_type: vector
-collector_bin_path: C:\Program Files\ubax-pilot\vector\vector.exe
-collector_conf_path: C:\Program Files\ubax-pilot\config\vector.toml
-max_cpu_percent: 80
+vector_bin_path: C:\Program Files\Vector\bin\vector.exe
+vector_conf_path: C:\Program Files\Vector\config\vector.yaml
 max_memory_mb: 512
-buffer_dir: C:\Program Files\ubax-pilot\buffer
-max_buffer_size_mb: 1024
