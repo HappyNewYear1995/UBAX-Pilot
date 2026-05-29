@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/ubax/ubax-pilot/internal/comm"
 	"github.com/ubax/ubax-pilot/internal/control"
@@ -87,52 +86,37 @@ func run(cfg *config.Config) error {
 	// 1. 初始化配置渲染器
 	renderer := comm.NewConfigRenderer(cfg.VectorConfPath)
 
-	// 2. 初始化远程配置客户端（拉取 → 渲染 → 热重载）
-	fetcher := comm.NewHTTPConfigFetcher(cfg.ServerEndpoint)
-	remoteConfig := comm.NewRemoteConfigClient(
-		fetcher,
-		renderer,
-		time.Duration(cfg.HeartbeatInterval)*time.Second,
-	)
-
-	// 3. 初始化进程管理器（Vector 进程生命周期管理）
+	// 2. 初始化进程管理器（Vector 进程生命周期管理）
 	processManager := control.NewProcessManager(cfg)
 
-	// 4. 初始化服务端推送客户端（配置推送 + 远程命令）
+	// 3. 初始化服务端推送客户端（配置推送 + 远程命令）
 	pushClient := comm.NewServerPushClient(cfg.ServerEndpoint, cfg.AgentUUID, "")
 	pushClient.SetConfigHandler(func(rules []byte) error {
-		if err := renderer.Render(rules); err != nil {
-			return err
-		}
-		return renderer.TriggerHotReload()
+		return renderer.Render(rules)
 	})
 	pushClient.SetCommandHandler(func(cmd comm.CommandPayload) error {
 		return handleRemoteCommand(cmd, processManager)
 	})
 
-	// 5. 初始化心跳上报（携带采集器实时状态）
+	// 4. 初始化心跳上报（携带采集器实时状态）
 	heartbeat := comm.NewHeartbeatReporter(cfg, processManager)
 
-	// 6. 初始化资源监控（内存/CPU 超限自动重启）
+	// 5. 初始化资源监控（内存/CPU 超限自动重启）
 	resourceMonitor := control.NewResourceMonitor(cfg, processManager)
 	resourceMonitor.Start()
 	defer resourceMonitor.Stop()
 
 	// 启动 Vector 进程
-	/*if err := processManager.Start(ctx); err != nil {
+	if err := processManager.Start(ctx); err != nil {
 		return err
 	}
 	defer func(processManager *control.ProcessManager) {
 		_ = processManager.Stop()
-	}(processManager)*/
+	}(processManager)
 
 	// 启动心跳上报
 	heartbeat.Start(ctx)
 	defer heartbeat.Stop()
-
-	// 启动远程配置轮询
-	remoteConfig.StartPolling(ctx)
-	defer remoteConfig.Stop()
 
 	// 启动服务端推送连接
 	pushClient.Start(ctx)
@@ -161,16 +145,6 @@ func handleRemoteCommand(cmd comm.CommandPayload, pm *control.ProcessManager) er
 	case "stop":
 		logger.Info("收到停止命令")
 		return pm.Stop()
-
-	case "reload":
-		logger.Info("收到配置重载命令")
-		return pm.ReloadConfig()
-
-	case "upgrade":
-		logger.Info("收到升级命令，版本:", cmd.Params["version"])
-		// TODO: 实现二进制下载和替换逻辑
-		logger.Warn("升级功能尚未实现")
-		return nil
 
 	default:
 		return fmt.Errorf("未知命令: %s", cmd.Action)

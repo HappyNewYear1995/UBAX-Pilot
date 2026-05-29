@@ -126,25 +126,7 @@ func (pm *ProcessManager) Restart() error {
 	return nil
 }
 
-// ReloadConfig 触发 Vector 配置热重载
-func (pm *ProcessManager) ReloadConfig() error {
-	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
-	if !pm.running || pm.cmd.Process == nil {
-		return fmt.Errorf("Vector 未运行，无法重载配置")
-	}
-
-	// Vector 支持通过 SIGHUP 信号触发热重载
-	if err := pm.cmd.Process.Signal(os.Interrupt); err != nil {
-		return fmt.Errorf("发送重载信号失败: %w", err)
-	}
-
-	logger.Info("已发送 Vector 配置重载信号")
-	return nil
-}
-
-// monitor 监控 Vector 进程，崩溃时自动重启
+// Stop 停止 Vector 进程，崩溃时自动重启
 func (pm *ProcessManager) monitor() {
 	defer close(pm.restartDone)
 

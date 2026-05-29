@@ -22,7 +22,7 @@ type PushMessage struct {
 
 // CommandPayload 远程命令载荷
 type CommandPayload struct {
-	Action string                 `json:"action"` // "restart" | "stop" | "upgrade" | "reload"
+	Action string                 `json:"action"` // "restart" | "stop"
 	Params map[string]interface{} `json:"params"`
 }
 
@@ -247,7 +247,7 @@ func (sp *ServerPushClient) handleConfigPush(payload json.RawMessage) {
 		return
 	}
 
-	logger.Info("收到配置推送，版本:", cfg.Version)
+	logger.Info("收到配置推送，版本:", cfg.Version, "，Vector 将自动重载")
 
 	if sp.configHandler != nil {
 		if err := sp.configHandler(cfg.Rules); err != nil {
