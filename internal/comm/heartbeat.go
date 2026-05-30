@@ -25,6 +25,7 @@ type HeartbeatReporter struct {
 	interval       time.Duration
 	stopCh         chan struct{}
 	httpClient     *http.Client
+	heartbeatCh    chan struct{}
 }
 
 // HeartbeatPayload 心跳上报数据
@@ -45,6 +46,7 @@ func NewHeartbeatReporter(cfg *config.Config, statusProvider CollectorStatusProv
 		statusProvider: statusProvider,
 		interval:       time.Duration(cfg.HeartbeatInterval) * time.Second,
 		stopCh:         make(chan struct{}),
+		heartbeatCh:    make(chan struct{}, 1),
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -57,11 +59,11 @@ func (hr *HeartbeatReporter) Start(ctx context.Context) {
 		ticker := time.NewTicker(hr.interval)
 		defer ticker.Stop()
 
-		// 发送初始心跳
-		hr.sendHeartbeat(ctx)
-
 		for {
 			select {
+			case <-hr.heartbeatCh:
+				hr.sendHeartbeat(ctx)
+				ticker.Reset(hr.interval)
 			case <-ticker.C:
 				hr.sendHeartbeat(ctx)
 			case <-hr.stopCh:
@@ -69,6 +71,14 @@ func (hr *HeartbeatReporter) Start(ctx context.Context) {
 			}
 		}
 	}()
+}
+
+// Trigger 触发一次心跳（通常在SSE连接建立后调用）
+func (hr *HeartbeatReporter) Trigger() {
+	select {
+	case hr.heartbeatCh <- struct{}{}:
+	default:
+	}
 }
 
 // Stop 停止心跳上报

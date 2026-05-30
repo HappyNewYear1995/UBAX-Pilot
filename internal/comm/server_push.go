@@ -34,17 +34,18 @@ type ConfigPayload struct {
 
 // ServerPushClient 接收服务端主动推送的配置和命令
 type ServerPushClient struct {
-	endpoint       string
-	agentUUID      string
-	token          string
-	configHandler  func([]byte) error
-	commandHandler func(CommandPayload) error
-	conn           *http.Response
-	stopCh         chan struct{}
-	mu             sync.Mutex
-	connected      bool
-	reconnectDelay time.Duration
-	maxDelay       time.Duration
+	endpoint        string
+	agentUUID       string
+	token           string
+	configHandler   func([]byte) error
+	commandHandler  func(CommandPayload) error
+	onConnected     func()
+	conn            *http.Response
+	stopCh          chan struct{}
+	mu              sync.Mutex
+	connected       bool
+	reconnectDelay  time.Duration
+	maxDelay        time.Duration
 }
 
 // NewServerPushClient 创建服务端推送客户端
@@ -67,6 +68,11 @@ func (sp *ServerPushClient) SetConfigHandler(handler func([]byte) error) {
 // SetCommandHandler 设置命令推送处理器
 func (sp *ServerPushClient) SetCommandHandler(handler func(CommandPayload) error) {
 	sp.commandHandler = handler
+}
+
+// SetOnConnected 设置连接建立后的回调
+func (sp *ServerPushClient) SetOnConnected(handler func()) {
+	sp.onConnected = handler
 }
 
 // Start 启动推送连接
@@ -137,6 +143,10 @@ func (sp *ServerPushClient) connect(ctx context.Context) error {
 	sp.mu.Unlock()
 
 	logger.Info("推送连接已建立")
+
+	if sp.onConnected != nil {
+		sp.onConnected()
+	}
 
 	// 读取 SSE 推送消息
 	buf := make([]byte, 4096)
