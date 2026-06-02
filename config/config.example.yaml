@@ -1,5 +1,5 @@
 agent_uuid: 7e9e362a-5d29-4a23-ab90-3ad02ea54e9e
-server_endpoint: http://localhost:48080
+server_endpoint: http://localhost:48080/admin-api
 heartbeat_interval_seconds: 30
 vector_bin_path: C:\Program Files\Vector\bin\vector.exe
 vector_conf_path: C:\Program Files\Vector\config\vector.yaml

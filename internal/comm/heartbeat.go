@@ -30,13 +30,9 @@ type HeartbeatReporter struct {
 
 // HeartbeatPayload 心跳上报数据
 type HeartbeatPayload struct {
-	AgentUUID       string    `json:"agent_uuid"`
-	Version         string    `json:"version"`
-	Hostname        string    `json:"hostname"`
-	Timestamp       time.Time `json:"timestamp"`
-	Healthy         bool      `json:"healthy"`
-	CollectorStatus string    `json:"collector_status"`
-	OS              string    `json:"os"`
+	AgentUUID       string `json:"uuid"`
+	Hostname        string `json:"hostname"`
+	CollectorStatus string `json:"collector_status"`
 }
 
 // NewHeartbeatReporter 创建一个新的心跳上报器
@@ -97,12 +93,8 @@ func (hr *HeartbeatReporter) sendHeartbeat(ctx context.Context) {
 
 	payload := &HeartbeatPayload{
 		AgentUUID:       hr.cfg.AgentUUID,
-		Version:         config.GetVersion(),
 		Hostname:        hostname,
-		Timestamp:       time.Now(),
-		Healthy:         collectorRunning,
 		CollectorStatus: mapStatus(collectorRunning),
-		OS:              hr.cfg.OS,
 	}
 
 	body, err := json.Marshal(payload)
@@ -111,7 +103,7 @@ func (hr *HeartbeatReporter) sendHeartbeat(ctx context.Context) {
 		return
 	}
 
-	url := hr.cfg.ServerEndpoint + "/pilot/agent/heartbeat"
+	url := hr.cfg.ServerEndpoint + "/gather/agent/heartbeat"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
 		logger.Error("创建心跳请求失败:", err)
@@ -134,7 +126,7 @@ func (hr *HeartbeatReporter) sendHeartbeat(ctx context.Context) {
 		return
 	}
 
-	logger.Debugf("心跳已发送: UUID = %s, 版本=%s, 采集器=%s", payload.AgentUUID, payload.Version, payload.CollectorStatus)
+	logger.Debugf("心跳已发送: UUID = %s, 采集器状态=%s", payload.AgentUUID, payload.CollectorStatus)
 }
 
 func mapStatus(running bool) string {

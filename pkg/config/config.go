@@ -26,6 +26,10 @@ type Config struct {
 	// 资源限制
 	MaxMemoryMB int64 `yaml:"max_memory_mb"`
 
+	// 日志设置
+	LogLevel string `yaml:"log_level"`
+	LogFile  string `yaml:"log_file"`
+
 	// 平台相关
 	OS string `yaml:"-"`
 }
@@ -34,11 +38,13 @@ type Config struct {
 func DefaultConfig() *Config {
 	return &Config{
 		AgentUUID:         generateUUID(),
-		ServerEndpoint:    "http://localhost:48080",
+		ServerEndpoint:    "http://localhost:48080/admin-api",
 		HeartbeatInterval: 60,
 		VectorBinPath:     defaultVectorBinPath(),
 		VectorConfPath:    defaultVectorConfPath(),
 		MaxMemoryMB:       512,
+		LogLevel:          "info",
+		LogFile:           defaultLogPath(),
 		OS:                runtime.GOOS,
 	}
 }
@@ -156,6 +162,17 @@ func defaultConfigPath() string {
 		return filepath.Join(programData, "ubax-pilot", "config", "config.yaml")
 	}
 	return "/etc/ubax-pilot/config.yaml"
+}
+
+func defaultLogPath() string {
+	if runtime.GOOS == "windows" {
+		programData := os.Getenv("ProgramData")
+		if programData == "" {
+			programData = `C:\ProgramData`
+		}
+		return filepath.Join(programData, "ubax-pilot", "logs", "ubax-pilot.log")
+	}
+	return "/var/log/ubax-pilot/ubax-pilot.log"
 }
 
 // IsWindows 判断是否运行在 Windows 上

@@ -15,22 +15,24 @@ import (
 
 // ProcessManager 管理底层 Vector 进程的生命周期
 type ProcessManager struct {
-	cfg         *config.Config
-	ctx         context.Context
-	cancel      context.CancelFunc
-	cmd         *exec.Cmd
-	mu          sync.Mutex
-	running     bool
-	stopCh      chan struct{}
-	restartDone chan struct{}
+	cfg        *config.Config
+	ctx        context.Context
+	cancel     context.CancelFunc
+	cmd        *exec.Cmd
+	mu         sync.Mutex
+	running    bool
+	stopCh     chan struct{}
+	doneCh     chan struct{}
+	restartCh  chan struct{}
 }
 
 // NewProcessManager 创建一个新的进程管理器
 func NewProcessManager(cfg *config.Config) *ProcessManager {
 	return &ProcessManager{
-		cfg:         cfg,
-		stopCh:      make(chan struct{}),
-		restartDone: make(chan struct{}),
+		cfg:       cfg,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
+		restartCh: make(chan struct{}, 1),
 	}
 }
 
@@ -75,9 +77,8 @@ func (pm *ProcessManager) startProcess() error {
 // Stop 优雅关闭 Vector 进程
 func (pm *ProcessManager) Stop() error {
 	pm.mu.Lock()
-	defer pm.mu.Unlock()
-
 	if !pm.running {
+		pm.mu.Unlock()
 		return nil
 	}
 
@@ -87,7 +88,9 @@ func (pm *ProcessManager) Stop() error {
 	close(pm.stopCh)
 
 	pm.running = false
-	<-pm.restartDone // 等待监控协程退出
+	pm.mu.Unlock()
+
+	<-pm.doneCh // 等待监控协程退出
 
 	logger.Info("Vector 采集器已停止")
 	return nil
@@ -111,13 +114,19 @@ func (pm *ProcessManager) Restart() error {
 
 	// 取消旧上下文
 	pm.cancel()
-	<-pm.restartDone // 等待旧监控协程退出
+
+	// 等待旧监控协程退出
+	<-pm.doneCh
 
 	// 创建新上下文并启动
-	pm.ctx, pm.cancel = context.WithCancel(pm.ctx)
+	pm.ctx, pm.cancel = context.WithCancel(context.Background())
 	if err := pm.startProcess(); err != nil {
 		return err
 	}
+
+	// 重置通道
+	pm.doneCh = make(chan struct{})
+	pm.stopCh = make(chan struct{})
 
 	// 启动新监控协程
 	go pm.monitor()
@@ -126,9 +135,9 @@ func (pm *ProcessManager) Restart() error {
 	return nil
 }
 
-// Stop 停止 Vector 进程，崩溃时自动重启
+// monitor 监控 Vector 进程，退出时不自动重启
 func (pm *ProcessManager) monitor() {
-	defer close(pm.restartDone)
+	defer close(pm.doneCh)
 
 	for {
 		if pm.cmd == nil || pm.cmd.Process == nil {
@@ -143,7 +152,7 @@ func (pm *ProcessManager) monitor() {
 			return
 		}
 
-		// 如果是上下文取消（正常关闭），不重启
+		// 如果是上下文取消（正常关闭），直接退出
 		if pm.ctx.Err() != nil {
 			pm.running = false
 			pm.mu.Unlock()
@@ -155,39 +164,7 @@ func (pm *ProcessManager) monitor() {
 		pm.mu.Unlock()
 
 		logger.Error("Vector 异常退出:", err)
-
-		// 指数退避重启
-		retryDelay := 5 * time.Second
-		maxDelay := 60 * time.Second
-		for attempt := 1; ; attempt++ {
-			select {
-			case <-pm.stopCh:
-				logger.Info("收到停止信号，取消重启")
-				return
-			case <-time.After(retryDelay):
-			}
-
-			logger.Info("正在尝试重启 Vector (第 %d 次)...", attempt)
-
-			pm.mu.Lock()
-			if err := pm.startProcess(); err != nil {
-				pm.mu.Unlock()
-				logger.Error("重启 Vector 失败:", err)
-				// 指数退避，最大 60 秒
-				retryDelay *= 2
-				if retryDelay > maxDelay {
-					retryDelay = maxDelay
-				}
-				continue
-			}
-
-			pm.running = true
-			pm.mu.Unlock()
-
-			logger.Info("Vector 重启成功，PID:", pm.cmd.Process.Pid)
-			// 继续监控新进程
-			break
-		}
+		return
 	}
 }
 

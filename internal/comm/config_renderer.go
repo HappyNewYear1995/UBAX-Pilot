@@ -1,9 +1,9 @@
 package comm
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/ubax/ubax-pilot/pkg/logger"
 )
@@ -32,13 +32,19 @@ func (cr *ConfigRenderer) Render(rules []byte) error {
 	return nil
 }
 
-// renderVectorConfig 生成 vector.yaml 配置
+// renderVectorConfig 生成 Vector YAML 配置
 func (cr *ConfigRenderer) renderVectorConfig(rules []byte) string {
-	var sb strings.Builder
-	// 如果 rules 不为空，生成配置
-	if len(rules) != 0 {
-		sb.WriteString(string(rules))
+	if len(rules) == 0 {
+		return ""
 	}
 
-	return sb.String()
+	// rules 是 JSON 编码的字符串，需要反序列化
+	var yamlContent string
+	if err := json.Unmarshal(rules, &yamlContent); err != nil {
+		// 如果不是 JSON 字符串，尝试直接使用原始内容
+		logger.Warn("配置内容不是 JSON 字符串格式，使用原始内容")
+		return string(rules)
+	}
+
+	return yamlContent
 }

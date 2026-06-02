@@ -79,6 +79,11 @@ func run(cfg *config.Config) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if err := logger.InitLogger(cfg.LogLevel, cfg.LogFile); err != nil {
+		return err
+	}
+	defer logger.Close()
+
 	logger.Info("正在启动 UBAX-Pilot...")
 	logger.Info("平台:", cfg.OS)
 	logger.Info("Vector 路径:", cfg.VectorBinPath)
@@ -89,14 +94,19 @@ func run(cfg *config.Config) error {
 	// 2. 初始化进程管理器（Vector 进程生命周期管理）
 	processManager := control.NewProcessManager(cfg)
 
-	// 3. 初始化服务端推送客户端（配置推送 + 远程命令）
-	pushClient := comm.NewServerPushClient(cfg.ServerEndpoint, cfg.AgentUUID, "")
-	pushClient.SetConfigHandler(func(rules []byte) error {
+	// 3. 初始化 API 服务器（接收服务端配置推送 + 远程命令）
+	apiServer := comm.NewAPIServer(cfg)
+	apiServer.SetConfigHandler(func(rules []byte) error {
 		return renderer.Render(rules)
 	})
-	pushClient.SetCommandHandler(func(cmd comm.CommandPayload) error {
+	apiServer.SetCommandHandler(func(cmd comm.CommandPayload) error {
 		return handleRemoteCommand(cmd, processManager)
 	})
+
+	// 向服务端注册
+	if err := apiServer.Register(); err != nil {
+		logger.Warn("Agent 注册失败:", err)
+	}
 
 	// 4. 初始化心跳上报（携带采集器实时状态）
 	heartbeat := comm.NewHeartbeatReporter(cfg, processManager)
@@ -118,9 +128,11 @@ func run(cfg *config.Config) error {
 	heartbeat.Start(ctx)
 	defer heartbeat.Stop()
 
-	// 启动服务端推送连接
-	pushClient.Start(ctx)
-	defer pushClient.Stop()
+	// 启动 API 服务器
+	if err := apiServer.Start(ctx); err != nil {
+		return err
+	}
+	defer apiServer.Stop()
 
 	// 等待关闭信号
 	sigCh := make(chan os.Signal, 1)
